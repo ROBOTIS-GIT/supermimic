@@ -204,18 +204,30 @@ assert not any(n.split('.')[0] in ('mjlab','mujoco','isaaclab','isaacsim','omni'
         dyn = Dynamics(rep, 23, 1, torch.ones(23), torch.zeros(23), hidden_dims=(16,16,16))
         learner = WorldModelLearner(dyn, rep, WorldModelLearnerCfg(num_batches=1, batch_size=2, horizon=3))
         before = snapshot(dyn)
+        wm_muon = [(p, p.detach().clone()) for opt in learner.optimizers
+                   if isinstance(opt, torch.optim.Muon) for group in opt.param_groups
+                   for p in group['params'] if p.ndim == 2]
+        self.assertTrue(wm_muon, 'WM must have Muon-managed hidden matrices')
         batch = TensorDict({'state': states, 'action': torch.randn(2,3,23),
                             'sim_ctx':torch.zeros(2,3,1)}, batch_size=[2,3])
         stats = learner.update([batch])
         self.assertTrue(all(torch.isfinite(v) for v in stats.values()))
         self.assertTrue(changed(before, dyn))
+        self.assertTrue(any(not torch.equal(p, old) for p, old in wm_muon),
+                        'A Muon-managed WM hidden matrix must actually update')
         actor = Actor(rep.rep_state_dim)
         policy = BpttPolicyLearner(actor, TensorRollout(dyn, rep, states[:,0]),
                                   BpttPolicyLearnerCfg(batch_size=2, horizon=2))
         before_dyn, before_actor = snapshot(dyn), snapshot(actor)
+        actor_muon = [(p, p.detach().clone()) for opt in policy.actor_optimizers
+                      if isinstance(opt, torch.optim.Muon) for group in opt.param_groups
+                      for p in group['params'] if p.ndim == 2]
+        self.assertTrue(actor_muon, 'Actor must have Muon-managed hidden matrices')
         stats = policy.update()
         self.assertTrue(all(torch.isfinite(v) for v in stats.values()))
         self.assertTrue(changed(before_actor, actor))
+        self.assertTrue(any(not torch.equal(p, old) for p, old in actor_muon),
+                        'A Muon-managed actor hidden matrix must actually update')
         self.assertFalse(changed(before_dyn, dyn))
         self.assertTrue(all(not p.requires_grad for p in dyn.parameters()))
         self.assertTrue(any(isinstance(o, torch.optim.Muon) for o in learner.optimizers))
