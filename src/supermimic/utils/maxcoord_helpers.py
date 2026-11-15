@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Maximal-coordinate representation helper functions.
 
 Full state layout:
@@ -21,18 +23,18 @@ Prediction layout (dyn_head output):
 from __future__ import annotations
 
 import torch
-from mjlab.utils.lab_api.math import (
-  matrix_from_quat,
-  quat_apply_inverse,
-  quat_inv,
-  quat_mul,
-)
 
 from supermimic.utils.helpers import (
   matrix_to_quat,
   quat_to_rot6d,
   rot6d_to_matrix,
   small_matmul,
+)
+from supermimic.utils.math import (
+  matrix_from_quat,
+  quat_apply_inverse,
+  quat_inv,
+  quat_mul,
 )
 
 

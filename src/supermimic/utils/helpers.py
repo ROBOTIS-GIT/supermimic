@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Shared utility functions used across multiple modules.
 
 Representation-specific helpers live in dedicated modules:
@@ -8,7 +10,8 @@ Representation-specific helpers live in dedicated modules:
 from __future__ import annotations
 
 import torch
-from mjlab.utils.lab_api.math import matrix_from_quat, quat_mul
+
+from supermimic.utils.math import matrix_from_quat, quat_mul
 
 
 def extract_action_scale_offset(env: object) -> tuple[torch.Tensor, torch.Tensor]:

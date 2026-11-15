@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Per-task specs for the multi-encoder actor.
 
 A ``TaskSpec`` bundles everything needed to route one task through the actor:
@@ -14,10 +16,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import torch
-from mjlab.utils.lab_api.math import quat_apply_inverse
 from tensordict import TensorDict
 
 from supermimic.representations import actor_goal_dim
+from supermimic.utils.math import quat_apply_inverse
 
 if TYPE_CHECKING:
   from mjlab.tasks.tracking.mdp.commands import MotionLoader

@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Script to benchmark Speed of Simulation and World Model."""
 
 from __future__ import annotations
@@ -13,10 +15,10 @@ from mjlab.rl import RslRlVecEnvWrapper
 from mjlab.tasks.registry import load_env_cfg
 from mjlab.utils.torch import configure_torch_backends
 
-import supermimic.tasks  # noqa: F401
 from supermimic.representations import extract_actor_goal
 from supermimic.runners.run_config import check_representation_matches, load_runner_cfg
 from supermimic.runners.supermimic_runner import build_actor, build_world_model
+from supermimic.tasks import register_tasks
 from supermimic.tasks.task_spec import build_actor_obs_td
 from supermimic.utils.wandb_artifacts import (
   download_artifact_cached,
@@ -211,6 +213,7 @@ def benchmark(cfg: BenchmarkConfig) -> None:
 
 
 def main() -> None:
+  register_tasks()
   args = tyro.cli(BenchmarkConfig)
   benchmark(args)
 

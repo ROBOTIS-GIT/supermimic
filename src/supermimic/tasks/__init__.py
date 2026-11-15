@@ -1,30 +1,36 @@
-"""Register SuperMimic tasks."""
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
+"""Explicit optional mjlab task registration; importing task specs is pure."""
 
-from mjlab.tasks.registry import load_rl_cfg, register_mjlab_task
 
-from .env_cfgs import gencoord_env_cfg, maxcoord_env_cfg
+def register_tasks():
+  """Register official G1 tasks after the caller selects the mjlab runtime."""
+  import mjlab.tasks  # noqa: F401
+  from mjlab.tasks.registry import load_rl_cfg, register_mjlab_task
 
-# We reuse the RL config from the base tracking task
-BASE_TASK_ID = "Mjlab-Tracking-Flat-Unitree-G1"
+  from .env_cfgs import gencoord_env_cfg, maxcoord_env_cfg
 
-try:
-  register_mjlab_task(
-    task_id="SuperMimic-GenCoord-G1",
-    env_cfg=gencoord_env_cfg(),
-    play_env_cfg=gencoord_env_cfg(play=True),
-    rl_cfg=load_rl_cfg(BASE_TASK_ID),
-  )
-except ValueError:
-  # Already registered
-  pass
+  # We reuse the RL config from the base tracking task
+  BASE_TASK_ID = "Mjlab-Tracking-Flat-Unitree-G1"
 
-try:
-  register_mjlab_task(
-    task_id="SuperMimic-MaxCoord-G1",
-    env_cfg=maxcoord_env_cfg(),
-    play_env_cfg=maxcoord_env_cfg(play=True),
-    rl_cfg=load_rl_cfg(BASE_TASK_ID),
-  )
-except ValueError:
-  # Already registered
-  pass
+  try:
+    register_mjlab_task(
+      task_id="SuperMimic-GenCoord-G1",
+      env_cfg=gencoord_env_cfg(),
+      play_env_cfg=gencoord_env_cfg(play=True),
+      rl_cfg=load_rl_cfg(BASE_TASK_ID),
+    )
+  except ValueError:
+    # Already registered
+    pass
+
+  try:
+    register_mjlab_task(
+      task_id="SuperMimic-MaxCoord-G1",
+      env_cfg=maxcoord_env_cfg(),
+      play_env_cfg=maxcoord_env_cfg(play=True),
+      rl_cfg=load_rl_cfg(BASE_TASK_ID),
+    )
+  except ValueError:
+    # Already registered
+    pass

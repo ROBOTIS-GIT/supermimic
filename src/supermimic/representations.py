@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """State representations for the world model.
 
 Two representations are provided:
@@ -13,7 +15,8 @@ from typing import TYPE_CHECKING, Literal
 
 import torch
 import torch.nn as nn
-from mjlab.utils.lab_api.math import (
+
+from supermimic.utils.math import (
   matrix_from_quat,
   quat_apply,
   quat_apply_inverse,
@@ -301,7 +304,19 @@ class StateRepresentation(nn.Module, ABC):
 
   def bind(self, env: ManagerBasedRlEnv, sim_context: SimContext) -> None:
     """Resolve env-dependent state needed by the reward and the proprio sensor."""
-    self._soft_joint_pos_limits = env.scene["robot"].data.soft_joint_pos_limits[0]
+    StateRepresentation.bind_native(self, env.scene["robot"].data.soft_joint_pos_limits[0])
+
+  def bind_native(self, soft_joint_pos_limits: torch.Tensor) -> None:
+    """Bind native joint limits without requiring a simulator environment."""
+    if soft_joint_pos_limits.shape != (self.num_joints, 2):
+      raise ValueError("Native joint limits must match the action-joint order")
+    if (soft_joint_pos_limits.device != self._default_joint_pos.device
+        or soft_joint_pos_limits.dtype != self._default_joint_pos.dtype):
+      raise ValueError("Bind native limits on the representation's final device and dtype")
+    if (not torch.isfinite(soft_joint_pos_limits).all()
+        or (soft_joint_pos_limits[:, 0] > soft_joint_pos_limits[:, 1]).any()):
+      raise ValueError("Native joint limits must be finite and ordered")
+    self._soft_joint_pos_limits = soft_joint_pos_limits
 
   @abstractmethod
   def joint_state(self, rep_state: torch.Tensor) -> torch.Tensor:
@@ -494,6 +509,11 @@ class GenCoordRepresentation(StateRepresentation):
     super().bind(env, sim_context)
     self.fk = env.command_manager.get_term("motion").motion.fk
 
+  def bind_native(self, soft_joint_pos_limits: torch.Tensor, fk) -> None:
+    """Use a native differentiable FK callable with the official representation."""
+    super().bind_native(soft_joint_pos_limits)
+    self.fk = fk
+
   def represent(self, full_state: torch.Tensor) -> torch.Tensor:
     flat = full_state.reshape(-1, self.full_state_dim)
     rep = compute_gencoord_state(flat)
@@ -653,6 +673,30 @@ class MaxCoordRepresentation(StateRepresentation):
     )
     columns = sim_context.find("encoder_bias")
     self._encoder_bias = None if columns is None else (columns, sim_context)
+
+  def bind_native(
+    self, soft_joint_pos_limits: torch.Tensor, analytic_ik,
+    encoder_bias: tuple[slice, SimContext] | None = None,
+  ) -> None:
+    """Bind IK taking root-local rotations/twists, before capture on final device."""
+    super().bind_native(soft_joint_pos_limits)
+    if isinstance(analytic_ik, AnalyticIK):
+      analytic_ik.validate_binding(self.num_bodies, self.num_joints,
+                                  self._default_joint_pos.device, self._default_joint_pos.dtype)
+    # Also validate ordinary native callables, without requiring a simulator type.
+    rotations = torch.eye(3, device=soft_joint_pos_limits.device,
+                          dtype=soft_joint_pos_limits.dtype).expand(1, self.num_bodies, 3, 3)
+    velocities = soft_joint_pos_limits.new_zeros(1, self.num_bodies, 3)
+    with torch.no_grad():
+      joints = analytic_ik(rotations, velocities)
+    if not isinstance(joints, tuple) or len(joints) != 2:
+      raise ValueError("Native IK must return (joint_pos, joint_vel)")
+    if any(t.shape != (1, self.num_joints) or t.device != soft_joint_pos_limits.device
+           or t.dtype != soft_joint_pos_limits.dtype or not torch.isfinite(t).all()
+           for t in joints):
+      raise ValueError("Native IK outputs must match the native joint count, device and dtype")
+    self.analytic_ik = analytic_ik
+    self._encoder_bias = encoder_bias
 
   def represent(self, full_state: torch.Tensor) -> torch.Tensor:
     flat = full_state.reshape(-1, self.full_state_dim)

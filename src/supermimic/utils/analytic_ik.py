@@ -1,6 +1,8 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Analytic inverse kinematics: joint angles and rates from tracked body poses.
 
-Between a tracked parent and child sit two or three hinges. Moving each fixed
+Between a tracked parent and child sit one, two or three hinges. Moving each fixed
 link rotation Q left through the hinges (``Q R_a(t) = R_{Qa}(t) Q``) gives
 ``R_p^T R_c = R_{b1}(t1) R_{b2}(t2) [R_{b3}(t3)] Y``, with ``b_i`` the hinge axes
 in the parent frame at the zero pose and ``Y`` the fixed rotations' product. In
@@ -14,12 +16,14 @@ opposite ``b1 x b2``), and the relative angular velocity in that frame is
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
-import mujoco
+if TYPE_CHECKING:
+  import mujoco
 import torch
-from mjlab.utils.lab_api.math import matrix_from_quat
 
 from supermimic.utils.helpers import small_matmul
+from supermimic.utils.math import matrix_from_quat
 
 _TWO_PI = 2 * math.pi
 _SIN_CLAMP = 1e-6  # keeps asin' finite where |sin(u2)| reaches 1
@@ -50,7 +54,15 @@ def _reduce(mj_model: mujoco.MjModel, body: int, row_of: dict, col_of: dict):
     if (joint := int(mj_model.body_jntadr[link])) >= 0:
       axes.append(y @ torch.from_numpy(mj_model.jnt_axis[joint]).double())
       joints.append(joint)
-  x = torch.stack([axes[0], axes[1], torch.linalg.cross(axes[0], axes[1])])
+  if not 1 <= len(axes) <= 3:
+    raise ValueError("AnalyticIK requires one to three hinges per tracked chain")
+  if len(axes) == 1:
+    basis = torch.eye(3, dtype=torch.float64)[axes[0].abs().argmin()]
+    second = torch.linalg.cross(basis, axes[0])
+    second = second / torch.linalg.vector_norm(second)
+  else:
+    second = axes[1]
+  x = torch.stack([axes[0], second, torch.linalg.cross(axes[0], second)])
 
   k = len(joints)
   qadr = [int(mj_model.jnt_qposadr[j]) for j in joints]
@@ -96,6 +108,93 @@ class AnalyticIK:
     # qj column of each (chain, slot); -1 on the unused slot of a two-joint chain.
     slot_col = torch.tensor(cols).flatten()
     self.perm = slot_col.argsort()[slot_col.lt(0).sum() :].to(device)
+
+  @classmethod
+  def from_constants(
+    cls, *, parent: torch.Tensor, child: torch.Tensor,
+    A: torch.Tensor, B: torch.Tensor, sign: torch.Tensor,
+    qpos0: torch.Tensor, lo: torch.Tensor, hi: torch.Tensor, perm: torch.Tensor,
+  ) -> AnalyticIK:
+    """Build from native-model constants, without importing a simulator.
+
+    parent/child are tracked-body rows; A/B are (chains,3,3) reduced
+    rotation bases; sign/qpos0/lo/hi are (chains,3) padded joint data.
+    perm maps flattened chain slots to native action-joint order and must
+    select each active slot exactly once. Active slots are contiguous from
+    slot zero: signs (1,0,0), (1,1,0), or (1,1,+/-1). All other padded
+    values are zero. Floating tensors share a dtype and all tensors a device.
+    Body bounds and joint count are checked by validate_binding before use.
+    """
+    obj = cls.__new__(cls)
+    values = dict(parent=parent, child=child, A=A, B=B, sign=sign,
+                  qpos0=qpos0, lo=lo, hi=hi, perm=perm)
+    n = parent.numel()
+    if n == 0 or parent.shape != (n,) or child.shape != (n,):
+      raise ValueError("parent/child must be one-dimensional chain indices")
+    if parent.dtype != torch.long or child.dtype != torch.long or perm.dtype != torch.long:
+      raise ValueError("parent, child and perm must have dtype torch.long")
+    if A.shape != (n, 3, 3) or B.shape != (n, 3, 3):
+      raise ValueError("A/B must have shape (chains,3,3)")
+    for name in ("sign", "qpos0", "lo", "hi"):
+      if values[name].shape != (n, 3):
+        raise ValueError(f"{name} must have shape (chains,3)")
+    if len({v.device for v in values.values()}) != 1:
+      raise ValueError("IK constants must share a device")
+    floats = (A, B, sign, qpos0, lo, hi)
+    if not A.is_floating_point() or any(v.dtype != A.dtype for v in floats):
+      raise ValueError("IK floating constants must share a floating dtype")
+    if any(not torch.isfinite(v).all() for v in (A, B, sign, qpos0, lo, hi)):
+      raise ValueError("IK constants must be finite")
+    if (parent < 0).any() or (child <= 0).any() or (parent == child).any():
+      raise ValueError("IK body indices must be nonnegative, with distinct non-root children")
+    if child.unique().numel() != n:
+      raise ValueError("Each IK child must have exactly one parent")
+    ancestry = dict(zip(child.tolist(), parent.tolist(), strict=True))
+    for body in ancestry:
+      visited = set()
+      while body in ancestry:
+        if body in visited:
+          raise ValueError("IK parent/child topology must be acyclic")
+        visited.add(body)
+        body = ancestry[body]
+    valid_sign = ((sign[:, 0] == 1)
+                  & ((sign[:, 1] == 0) | (sign[:, 1] == 1))
+                  & ((sign[:, 2] == 0) | ((sign[:, 1] == 1) & (sign[:, 2].abs() == 1))))
+    if not valid_sign.all():
+      raise ValueError("IK hinge signs must be (1,0,0), (1,1,0), or (1,1,+/-1)")
+    padding = sign == 0
+    if any((v[padding] != 0).any() for v in (qpos0, lo, hi)):
+      raise ValueError("Unused IK joint slots must have zero padding")
+    if (lo > hi).any():
+      raise ValueError("IK lower joint limits must not exceed upper limits")
+    tolerance = max(1e-8, 100 * torch.finfo(A.dtype).eps)
+    eye = torch.eye(3, device=A.device, dtype=A.dtype).expand(n, 3, 3)
+    for rotation in (A, B):
+      if (not torch.allclose(rotation.transpose(-1, -2) @ rotation, eye,
+                             atol=tolerance, rtol=0)
+          or not torch.allclose(torch.linalg.det(rotation), torch.ones_like(parent, dtype=A.dtype),
+                                atol=tolerance, rtol=0)):
+        raise ValueError("IK A/B must be proper rotation matrices")
+    active = torch.nonzero(sign.flatten() != 0).flatten()
+    if perm.ndim != 1 or not torch.equal(perm.sort().values, active):
+      raise ValueError("perm must select every active joint slot exactly once")
+    for name, value in values.items():
+      setattr(obj, name, value)
+    obj.three = sign[:, 2] != 0
+    return obj
+
+  def validate_binding(self, num_bodies: int, num_joints: int,
+                       device: torch.device, dtype: torch.dtype) -> None:
+    """Validate native dimensions/device before capture; no solver changes."""
+    if ((self.parent < 0).any() or (self.child < 0).any()
+        or (self.parent >= num_bodies).any() or (self.child >= num_bodies).any()):
+      raise ValueError("IK body indices exceed the representation's tracked body bounds")
+    if self.perm.numel() != num_joints:
+      raise ValueError("IK joint count does not match the native action order")
+    for name in ("parent", "child", "A", "B", "sign", "qpos0", "lo", "hi", "perm"):
+      tensor = getattr(self, name)
+      if tensor.device != device or (tensor.is_floating_point() and tensor.dtype != dtype):
+        raise ValueError("Bind IK on the representation's final device and dtype")
 
   def __call__(
     self, rots: torch.Tensor, avels: torch.Tensor, damp: float = 1e-2

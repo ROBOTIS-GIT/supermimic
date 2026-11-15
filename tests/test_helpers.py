@@ -1,13 +1,13 @@
 """Tests for supermimic.utils.helpers — rotation and utility functions."""
 
 import torch
-from mjlab.utils.lab_api.math import quat_apply
 
 from supermimic.utils.helpers import (
   quat_integrate,
   quat_to_rot6d,
   rodrigues_rotate,
 )
+from supermimic.utils.math import quat_apply
 
 IDENTITY_QUAT = torch.tensor([1.0, 0.0, 0.0, 0.0])
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import torch
-from mjlab.tasks.tracking.mdp import bad_anchor_ori, bad_anchor_pos_z_only, time_out
 from tensordict import TensorDict
 
 from supermimic.sim_context import FootFrictionSpec, SimContext
@@ -23,6 +22,18 @@ __all__ = [
   "make_mock_wm_representation",
   "make_mock_sim_context",
 ]
+
+def bad_anchor_ori(*args, **kwargs):
+  raise AssertionError("Test marker must not execute simulator termination")
+
+
+def bad_anchor_pos_z_only(*args, **kwargs):
+  raise AssertionError("Test marker must not execute simulator termination")
+
+
+def time_out(*args, **kwargs):
+  raise AssertionError("Test marker must not execute simulator termination")
+
 
 # Shared dims for multi-encoder actor tests (G1 MaxCoord).
 OBS_DIM = 68

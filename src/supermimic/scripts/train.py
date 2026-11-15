@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Script to train World Model using SuperMimicRunner."""
 
 from __future__ import annotations
@@ -10,13 +12,13 @@ import tyro
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.tasks.registry import list_tasks, load_env_cfg
 
-import supermimic.tasks  # noqa: F401
 from supermimic.runners.supermimic_runner import SuperMimicRunner, SuperMimicRunnerCfg
 from supermimic.scripts.train_utils import (
   create_env,
   download_registry_motions,
   setup_device,
 )
+from supermimic.tasks import register_tasks
 
 
 @dataclass
@@ -40,6 +42,7 @@ class TrainConfig:
 
 
 def main() -> None:
+  register_tasks()
   # Parse first argument to choose the task.
   all_tasks = list_tasks()
   chosen_task, remaining_args = tyro.cli(

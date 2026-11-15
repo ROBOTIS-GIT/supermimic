@@ -5,17 +5,17 @@ helpers used by the reward, and reward / apply_prediction gradient flow.
 """
 
 import torch
-from mjlab.utils.lab_api.math import (
-  matrix_from_quat,
-  quat_apply,
-  quat_error_magnitude,
-)
 
 from supermimic.representations import MaxCoordRepresentation
 from supermimic.utils.helpers import (
   quat_to_rot6d,
   rot6d_to_matrix,
   rotation_error_magnitude,
+)
+from supermimic.utils.math import (
+  matrix_from_quat,
+  quat_apply,
+  quat_error_magnitude,
 )
 from supermimic.utils.maxcoord_helpers import (
   build_maxcoord_full_state,

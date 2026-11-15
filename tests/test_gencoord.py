@@ -1,5 +1,6 @@
 """Tests for GenCoordRepresentation and create_representation factory."""
 
+import pytest
 import torch
 
 from supermimic.representations import (
@@ -120,7 +121,7 @@ class TestGenCoordAccelPrediction:
 
   def test_kinematic_consistency(self):
     """qj integrates vj; z and gravity are derived from the root pose."""
-    from mjlab.utils.lab_api.math import quat_apply_inverse
+    from supermimic.utils.math import quat_apply_inverse
 
     rep = self._rep()
     dt = 0.02
@@ -242,6 +243,7 @@ class TestProprioNoiseSpecConsistency:
   """env_cfg's `_sensor_actor_group` and rep.proprio_noise_bounds must agree."""
 
   def test_env_cfg_terms_match_half_widths(self):
+    pytest.importorskip("mjlab", reason="optional research backend")
     from supermimic.representations import PROPRIO_NOISE_HALF_WIDTHS
     from supermimic.tasks.env_cfgs import _sensor_actor_group
 

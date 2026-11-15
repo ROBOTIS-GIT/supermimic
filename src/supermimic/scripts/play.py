@@ -1,3 +1,5 @@
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# Modified for Cyclo portability/runtime boundaries; see PATCHES.md.
 """Play a SuperMimic multi-encoder actor against the sim."""
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from mjlab.tasks.registry import list_tasks, load_env_cfg
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.utils.torch import configure_torch_backends
 
-import supermimic.tasks  # noqa: F401
 from supermimic.runners.run_config import check_representation_matches, load_runner_cfg
 from supermimic.runners.supermimic_runner import build_actor, build_world_model
 from supermimic.scripts.viewers import (
@@ -25,6 +26,7 @@ from supermimic.scripts.viewers import (
   SuperMimicViserViewer,
   create_wm_vis_model,
 )
+from supermimic.tasks import register_tasks
 from supermimic.utils.wandb_artifacts import (
   download_artifact_cached,
   download_model_dir,
@@ -137,6 +139,7 @@ def play(task_id: str, cfg: PlayConfig) -> None:
 
 
 def main() -> None:
+  register_tasks()
   all_tasks = list_tasks()
   chosen_task, remaining_args = tyro.cli(
     tyro.extras.literal_type_from_choices(all_tasks),
