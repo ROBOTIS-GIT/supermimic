@@ -36,19 +36,14 @@ class Actor(torch.nn.Module):
 
 class TensorRollout:
   """Synthetic differentiable fixture using the real Dynamics integration."""
-  num_envs = 2
-  num_actions = 23
   max_step_reward = float('inf')
 
-  def __init__(self, dynamics, representation, initial):
-    self.dynamics, self.representation, self.initial = dynamics, representation, initial
-
-  def sample_initial_states(self):
-    return TensorDict({}, batch_size=[2])
+  def __init__(self, dynamics, representation):
+    self.dynamics, self.representation = dynamics, representation
 
   def reset(self, batch):
-    self.state = self.representation.represent(self.initial)
-    self.aux = self.representation.extract_aux_state(self.initial)
+    self.state = self.representation.represent(batch["state"])
+    self.aux = self.representation.extract_aux_state(batch["state"])
     return self.obs()
 
   def obs(self):
@@ -56,7 +51,7 @@ class TensorRollout:
 
   def step(self, actions):
     self.aux, self.state = self.dynamics(self.state, actions, self.aux, torch.zeros(2, 1))
-    return self.obs(), -self.state.square().mean(-1), torch.zeros(2), {}
+    return self.obs(), -self.state.square().mean(-1), torch.zeros(2)
 
 
 class TensorCoreAcceptance(unittest.TestCase):
@@ -71,7 +66,7 @@ sys.meta_path.insert(0, Guard())
 import supermimic.models, supermimic.representations, supermimic.replay_buffer
 import supermimic.sim_context, supermimic.tasks.task_spec
 import supermimic.learners.policy_learner, supermimic.learners.wm_learner
-import supermimic.envs.world_model_env, supermimic.envs.multi_task_world_model_env
+import supermimic.envs.world_model_env
 assert not any(n.split('.')[0] in ('mjlab','mujoco','isaaclab','isaacsim','omni') for n in sys.modules)
 '''
     subprocess.run([sys.executable, '-c', code], check=True)
@@ -216,14 +211,14 @@ assert not any(n.split('.')[0] in ('mjlab','mujoco','isaaclab','isaacsim','omni'
         self.assertTrue(any(not torch.equal(p, old) for p, old in wm_muon),
                         'A Muon-managed WM hidden matrix must actually update')
         actor = Actor(rep.rep_state_dim)
-        policy = BpttPolicyLearner(actor, TensorRollout(dyn, rep, states[:,0]),
+        policy = BpttPolicyLearner(actor, TensorRollout(dyn, rep),
                                   BpttPolicyLearnerCfg(batch_size=2, horizon=2))
         before_dyn, before_actor = snapshot(dyn), snapshot(actor)
         actor_muon = [(p, p.detach().clone()) for opt in policy.actor_optimizers
                       if isinstance(opt, torch.optim.Muon) for group in opt.param_groups
                       for p in group['params'] if p.ndim == 2]
         self.assertTrue(actor_muon, 'Actor must have Muon-managed hidden matrices')
-        stats = policy.update()
+        stats = policy.update([TensorDict({"state": states[:, 0]}, batch_size=[2])])
         self.assertTrue(all(torch.isfinite(v) for v in stats.values()))
         self.assertTrue(changed(before_actor, actor))
         self.assertTrue(any(not torch.equal(p, old) for p, old in actor_muon),

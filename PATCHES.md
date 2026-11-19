@@ -1,7 +1,7 @@
 # Cyclo shared-core patch contract
 
 This branch descends from official [HybridRobotics/SuperMimic](https://github.com/HybridRobotics/supermimic)
-commit `abc124c1bd5976341034668af3d12c087f2f1f55`. The original Apache-2.0 LICENSE
+commit `698ea39bc901d8fe733b3c8621df3199d241f7e4`. The original Apache-2.0 LICENSE
 is unchanged. README setup commands explicitly select the optional research
 runtime; its introduction, project links and acknowledgements are retained.
 Native robot assets, configuration, collection, motion
@@ -87,11 +87,13 @@ MaxCoord still integrates the original independent body state; no FK projection
 has been added. GenCoord and MaxCoord representation/reward/integration methods
 are otherwise unchanged.
 
-The original `WorldModelEnv` and subclasses accept a duck-typed native facade.
+`WorldModelEnv` accepts a duck-typed native facade.
 It supplies `num_actions`, `cfg.rewards` (terms with `weight`),
 `cfg.terminations['anchor_pos'/'anchor_ori'].params['threshold']`, and `unwrapped`
 with `step_dt` and `command_manager.get_term('motion')`. The motion command
-provides `motion` and `motion_anchor_body_index`. The motion provider supplies
+provides `motion` and `motion_anchor_body_index`. The runner draws policy starts
+with `sample_start(buffer, history_length, batch_size)` and passes the batches to
+`policy_learner.update(starts)`. The motion provider supplies
 `joint_pos`, `joint_vel`, `root_pos_w`, `root_quat_w`, `motion_ends` and
 `body_state(frame_indices)`. Reward scaling, replay/history boundaries, goals,
 termination and imagined rollout equations stay in the official classes.
@@ -115,7 +117,7 @@ not covered by that final cleanup block.
 | `utils/math.py` | Twelve tensor functions extracted unchanged from the pinned official research dependency's `src/mjlab/utils/lab_api/math.py`; BSD-3-Clause notice retained in the file and `licenses/IsaacLab-BSD-3-Clause.txt` |
 | `representations.py`, `tasks/task_spec.py`, `utils/{helpers,gencoord_helpers,maxcoord_helpers,tracking_reward}.py` | Replace eager mjlab math imports with the local licensed tensor functions; add explicit native representation bindings |
 | `utils/analytic_ik.py` | MuJoCo becomes a type-checking-only import; generic one-hinge reduction and validated constants constructor; original solver methods unchanged |
-| `tasks/__init__.py`, `scripts/{train,train_ppo,play,benchmark}.py` | Explicit optional research-task registration |
+| `tasks/__init__.py`, `scripts/{train,play,benchmark}.py` | Explicit optional research-task registration |
 | `runners/supermimic_runner.py` | Final-iteration checkpoint, final future completion, native extra-file hook |
 | `utils/wandb_artifacts.py` | No remote enumeration/pruning in offline/disabled/dryrun mode |
 | Tests | Pure-core fixtures/imports, optional backend test, numerical/learner/normalizer/IK acceptance, final checkpoint/offline regressions |
@@ -151,7 +153,11 @@ or orchestration dependencies. The remaining environment-noise configuration
 check skips explicitly when mjlab is absent. Consumer simulator regressions and
 submodule migrations must be validated separately against the selected commit.
 
-The candidate was exercised with these existing dependency sets on CPU:
+With upstream `698ea39`, the core-only Isaac Lab environment passed 193 tests
+with one optional backend check skipped. The stable MJLab environment passed
+all 220 tests, including the native bindings and final-checkpoint regressions.
+
+Before this merge, the following dependency sets were exercised on CPU:
 
 | Environment | Torch / TensorDict / RSL-RL | Checks |
 | --- | --- | --- |
